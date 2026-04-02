@@ -1,0 +1,19 @@
+tenable:
+  sc:
+    # Tenable Security Center host URL (no trailing slash)
+    base-url: https://your-security-center-host
+    username: your-username
+    password: your-password
+
+    # Set to true only when using self-signed certificates; disable in production with proper certs
+    ssl-verification-disabled: true
+
+    # HTTP client timeouts (milliseconds)
+    connect-timeout: 10000
+    read-timeout: 60000
+
+    # Pagination default
+    default-page-size: 100
+
+server:
+  port: 8080
