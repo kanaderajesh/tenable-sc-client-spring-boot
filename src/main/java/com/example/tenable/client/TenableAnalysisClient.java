@@ -11,7 +11,9 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Low-level HTTP client for the Tenable SC /rest/analysis endpoint.
@@ -24,19 +26,19 @@ public class TenableAnalysisClient {
     private static final String ANALYSIS_PATH = "/rest/analysis";
 
     private final RestTemplate tenableRestTemplate;
-    private final TenableProperties props;
 
     /**
-     * Executes an analysis query and returns the raw API response.
+     * Executes an analysis query against the specified endpoint.
      *
      * @param authHeaders pre-built auth headers — either {@code X-SecurityCenter} (token mode)
      *                    or {@code x-apikey} (API key mode), obtained from {@link TenableAuthClient}
      * @param request     the analysis request body
+     * @param baseUrl     the base URL of the target Security Center endpoint
      * @return the {@code response} section of the Tenable API envelope
      * @throws TenableApiException if the server returns an error
      */
-    public AnalysisResponse query(HttpHeaders authHeaders, AnalysisRequest request) {
-        String url = props.getBaseUrl() + ANALYSIS_PATH;
+    public AnalysisResponse query(HttpHeaders authHeaders, AnalysisRequest request, String baseUrl) {
+        String url = baseUrl + ANALYSIS_PATH;
 
         HttpHeaders headers = buildHeaders(authHeaders);
         HttpEntity<AnalysisRequest> httpRequest = new HttpEntity<>(request, headers);
@@ -69,22 +71,23 @@ public class TenableAnalysisClient {
     }
 
     /**
-     * Convenience: pages through ALL records automatically, collecting every page.
+     * Pages through ALL records automatically, collecting every page.
      *
      * @param authHeaders pre-built auth headers from {@link TenableAuthClient}
-     * @param template    the request template — {@code startOffset}/{@code endOffset} are managed here
+     * @param template    request template — {@code startOffset}/{@code endOffset} are managed here
      * @param pageSize    number of records per page
+     * @param baseUrl     the base URL of the target Security Center endpoint
      * @return all results concatenated across pages
      */
-    public List<java.util.Map<String, Object>> queryAll(
-            HttpHeaders authHeaders, AnalysisRequest template, int pageSize) {
+    public List<Map<String, Object>> queryAll(
+            HttpHeaders authHeaders, AnalysisRequest template, int pageSize, String baseUrl) {
 
-        List<java.util.Map<String, Object>> all = new java.util.ArrayList<>();
+        List<Map<String, Object>> all = new ArrayList<>();
         int start = 0;
 
         while (true) {
             AnalysisRequest page = buildPage(template, start, start + pageSize);
-            AnalysisResponse chunk = query(authHeaders, page);
+            AnalysisResponse chunk = query(authHeaders, page, baseUrl);
 
             if (chunk.getResults() != null) {
                 all.addAll(chunk.getResults());
@@ -92,7 +95,7 @@ public class TenableAnalysisClient {
 
             int fetched = all.size();
             int total   = chunk.getTotalRecords();
-            log.info("Fetched {}/{} records", fetched, total);
+            log.info("[{}] Fetched {}/{} records", baseUrl, fetched, total);
 
             if (fetched >= total || chunk.getReturnedRecords() == 0) {
                 break;
