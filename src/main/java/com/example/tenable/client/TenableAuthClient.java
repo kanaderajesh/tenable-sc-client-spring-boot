@@ -14,10 +14,12 @@ import org.springframework.web.client.RestTemplate;
 /**
  * Low-level HTTP client for the Tenable SC /token endpoint.
  *
- * <p>Responsibilities:
+ * <p>Supports two authentication modes controlled by {@code tenable.sc.auth-mode}:
  * <ul>
- *   <li>POST /token  — obtain a session token</li>
- *   <li>DELETE /token — invalidate the session</li>
+ *   <li><b>TOKEN</b> (default) — POST /token to obtain a session token, DELETE /token to log out.
+ *       Use {@link #createToken()} / {@link #buildTokenHeaders(long)} / {@link #deleteToken(long)}.</li>
+ *   <li><b>API_KEY</b> — stateless; attach {@code x-apikey} header on every request.
+ *       Use {@link #buildApiKeyHeaders()}. No login/logout calls are needed.</li>
  * </ul>
  */
 @Slf4j
@@ -29,6 +31,50 @@ public class TenableAuthClient {
 
     private final RestTemplate tenableRestTemplate;
     private final TenableProperties props;
+
+    // -------------------------------------------------------------------------
+    // Header builders — used by VulnerabilityService to pass auth to clients
+    // -------------------------------------------------------------------------
+
+    /**
+     * Builds the {@code X-SecurityCenter} header for a previously obtained session token.
+     * Only used in {@link TenableProperties.AuthMode#TOKEN} mode.
+     */
+    public HttpHeaders buildTokenHeaders(long token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-SecurityCenter", String.valueOf(token));
+        return headers;
+    }
+
+    /**
+     * Builds the {@code x-apikey} header required by Tenable SC API key authentication.
+     * Only used in {@link TenableProperties.AuthMode#API_KEY} mode.
+     *
+     * <p>Header format: {@code x-apikey: accesskey=ACCESS_KEY; secretkey=SECRET_KEY}
+     *
+     * @throws IllegalStateException if authMode is not API_KEY, or if access/secret keys are missing
+     */
+    public HttpHeaders buildApiKeyHeaders() {
+        if (props.getAuthMode() != TenableProperties.AuthMode.API_KEY) {
+            throw new IllegalStateException(
+                    "buildApiKeyHeaders() called but tenable.sc.auth-mode is TOKEN");
+        }
+        String ak = props.getAccessKey();
+        String sk = props.getSecretKey();
+        if (ak == null || ak.isBlank() || sk == null || sk.isBlank()) {
+            throw new IllegalStateException(
+                    "tenable.sc.access-key and tenable.sc.secret-key must both be set when auth-mode=API_KEY");
+        }
+        log.debug("Using API key authentication (accessKey prefix: {}...)",
+                ak.substring(0, Math.min(4, ak.length())));
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("x-apikey", "accesskey=" + ak + "; secretkey=" + sk);
+        return headers;
+    }
+
+    // -------------------------------------------------------------------------
+    // Token lifecycle — TOKEN mode only
+    // -------------------------------------------------------------------------
 
     /**
      * Authenticates with Tenable SC and returns the token data on success.

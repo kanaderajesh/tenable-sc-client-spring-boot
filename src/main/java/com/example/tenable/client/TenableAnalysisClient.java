@@ -29,15 +29,16 @@ public class TenableAnalysisClient {
     /**
      * Executes an analysis query and returns the raw API response.
      *
-     * @param token   the active session token (from {@link TenableAuthClient#createToken()})
-     * @param request the analysis request body
+     * @param authHeaders pre-built auth headers — either {@code X-SecurityCenter} (token mode)
+     *                    or {@code x-apikey} (API key mode), obtained from {@link TenableAuthClient}
+     * @param request     the analysis request body
      * @return the {@code response} section of the Tenable API envelope
      * @throws TenableApiException if the server returns an error
      */
-    public AnalysisResponse query(long token, AnalysisRequest request) {
+    public AnalysisResponse query(HttpHeaders authHeaders, AnalysisRequest request) {
         String url = props.getBaseUrl() + ANALYSIS_PATH;
 
-        HttpHeaders headers = buildHeaders(token);
+        HttpHeaders headers = buildHeaders(authHeaders);
         HttpEntity<AnalysisRequest> httpRequest = new HttpEntity<>(request, headers);
 
         log.debug("POST {} — type={} sourceType={} offsets=[{},{}]",
@@ -70,20 +71,20 @@ public class TenableAnalysisClient {
     /**
      * Convenience: pages through ALL records automatically, collecting every page.
      *
-     * @param token    active session token
-     * @param template the request template — {@code startOffset}/{@code endOffset} are managed here
-     * @param pageSize number of records per page
+     * @param authHeaders pre-built auth headers from {@link TenableAuthClient}
+     * @param template    the request template — {@code startOffset}/{@code endOffset} are managed here
+     * @param pageSize    number of records per page
      * @return all results concatenated across pages
      */
     public List<java.util.Map<String, Object>> queryAll(
-            long token, AnalysisRequest template, int pageSize) {
+            HttpHeaders authHeaders, AnalysisRequest template, int pageSize) {
 
         List<java.util.Map<String, Object>> all = new java.util.ArrayList<>();
         int start = 0;
 
         while (true) {
             AnalysisRequest page = buildPage(template, start, start + pageSize);
-            AnalysisResponse chunk = query(token, page);
+            AnalysisResponse chunk = query(authHeaders, page);
 
             if (chunk.getResults() != null) {
                 all.addAll(chunk.getResults());
@@ -104,11 +105,11 @@ public class TenableAnalysisClient {
 
     // -------------------------------------------------------------------------
 
-    private HttpHeaders buildHeaders(long token) {
+    private HttpHeaders buildHeaders(HttpHeaders authHeaders) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-        headers.set("X-SecurityCenter", String.valueOf(token));
+        headers.addAll(authHeaders);
         return headers;
     }
 
