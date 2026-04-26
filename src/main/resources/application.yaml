@@ -12,7 +12,7 @@ tenable:
     read-timeout: 60000
 
     # Default page size for paginated queries.
-    default-page-size: 100
+    default-page-size: 1000
 
     # -------------------------------------------------------------------------
     # Security Center endpoints, one entry per region.

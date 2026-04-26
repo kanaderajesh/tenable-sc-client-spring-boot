@@ -122,47 +122,71 @@ All endpoints are under `/api/v1/vulnerabilities`. **Every endpoint requires a `
 |-----------|-----------|----------|---------|-------------|
 | `region` | All endpoints | Yes | — | Target SC region (e.g. `APAC`, `EMEA`, `AMER`) |
 | `startOffset` | Paged endpoints | No | `0` | Start index for pagination |
-| `endOffset` | Paged endpoints | No | `100` | End index for pagination |
+| `endOffset` | Paged endpoints | No | `1000` | End index for pagination |
 | `view` | `/scan/{scanId}` | No | `all` | `all` \| `new` \| `patched` |
 | `pluginIds` | `/by-plugin` | Yes | — | One or more plugin IDs (repeat param or comma-separated) |
 
 ---
 
+### Pagination envelope
+
+Every endpoint (except `/all`) returns the same pagination envelope:
+
+```json
+{
+  "startOffset":    0,
+  "endOffset":      1000,
+  "totalRecords":   4231,
+  "returnedRecords": 1000,
+  "results": [ ... ]
+}
+```
+
+Use `startOffset` / `endOffset` from the response to request subsequent pages. The `/all` endpoint auto-pages and returns all records at once.
+
+---
+
 ### `GET /api/v1/vulnerabilities/ip/{ipAddress}`
 
-Returns every vulnerability detected on the specified host, including the raw plugin output text.
+Returns vulnerabilities detected on the specified host, including plugin output text. Supports pagination.
 
 ```
-GET /api/v1/vulnerabilities/ip/192.168.1.10?region=APAC
+GET /api/v1/vulnerabilities/ip/192.168.1.10?region=APAC&startOffset=0&endOffset=1000
 ```
 
 **Response:**
 ```json
-[
-  {
-    "pluginId":   "51192",
-    "pluginName": "SSL Certificate Cannot Be Trusted",
-    "pluginText": "The following certificate was at the top of the certificate\nchain sent by the remote host...",
-    "severity":   "High",
-    "ip":         "192.168.1.10",
-    "port":       "443",
-    "protocol":   "tcp",
-    "dnsName":    "host.example.com",
-    "synopsis":   "The SSL certificate cannot be trusted.",
-    "firstSeen":  "1700000000",
-    "lastSeen":   "1710000000"
-  }
-]
+{
+  "startOffset": 0,
+  "endOffset": 1000,
+  "totalRecords": 1,
+  "returnedRecords": 1,
+  "results": [
+    {
+      "pluginId":   "51192",
+      "pluginName": "SSL Certificate Cannot Be Trusted",
+      "pluginText": "The following certificate was at the top of the certificate\nchain sent by the remote host...",
+      "severity":   "High",
+      "ip":         "192.168.1.10",
+      "port":       "443",
+      "protocol":   "tcp",
+      "dnsName":    "host.example.com",
+      "synopsis":   "The SSL certificate cannot be trusted.",
+      "firstSeen":  "1700000000",
+      "lastSeen":   "1710000000"
+    }
+  ]
+}
 ```
 
 ---
 
 ### `GET /api/v1/vulnerabilities/by-plugin`
 
-Finds every host where any of the specified plugins have been detected. Returns a sorted map of IP address to a deduplicated list of matched plugin IDs. If the same plugin is found on multiple ports of a host, it appears once in the list.
+Finds every host where any of the specified plugins have been detected. Returns a paginated response where `results` is a sorted map of IP address to a deduplicated list of matched plugin IDs. If the same plugin is found on multiple ports of a host, it appears once in the list.
 
 ```
-GET /api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192
+GET /api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192&startOffset=0&endOffset=1000
 ```
 
 Comma-separated plugin IDs are also accepted:
@@ -174,9 +198,15 @@ GET /api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881,51192
 **Response:**
 ```json
 {
-  "10.0.0.5":    ["10881", "51192"],
-  "10.0.0.12":   ["51192"],
-  "192.168.1.3": ["10881"]
+  "startOffset": 0,
+  "endOffset": 1000,
+  "totalRecords": 3,
+  "returnedRecords": 3,
+  "results": {
+    "10.0.0.5":    ["10881", "51192"],
+    "10.0.0.12":   ["51192"],
+    "192.168.1.3": ["10881"]
+  }
 }
 ```
 
@@ -189,7 +219,7 @@ Returns `400 Bad Request` when `pluginIds` is missing or empty.
 Query with an arbitrary list of Tenable SC field filters.
 
 ```
-POST /api/v1/vulnerabilities/filter?region=EMEA&startOffset=0&endOffset=100
+POST /api/v1/vulnerabilities/filter?region=EMEA&startOffset=0&endOffset=1000
 ```
 
 **Request body:**
@@ -210,7 +240,7 @@ The examples below assume the application is running on `localhost:8080`. Replac
 ### Paged vulnerability list
 
 ```bash
-curl -s "http://localhost:8080/api/v1/vulnerabilities?region=APAC&startOffset=0&endOffset=50" \
+curl -s "http://localhost:8080/api/v1/vulnerabilities?region=APAC&startOffset=0&endOffset=1000" \
   | jq .
 ```
 
@@ -224,14 +254,14 @@ curl -s "http://localhost:8080/api/v1/vulnerabilities/all?region=APAC" \
 ### Critical vulnerabilities only
 
 ```bash
-curl -s "http://localhost:8080/api/v1/vulnerabilities/critical?region=EMEA&startOffset=0&endOffset=100" \
+curl -s "http://localhost:8080/api/v1/vulnerabilities/critical?region=EMEA&startOffset=0&endOffset=1000" \
   | jq .
 ```
 
 ### High vulnerabilities only
 
 ```bash
-curl -s "http://localhost:8080/api/v1/vulnerabilities/high?region=AMER&startOffset=0&endOffset=100" \
+curl -s "http://localhost:8080/api/v1/vulnerabilities/high?region=AMER&startOffset=0&endOffset=1000" \
   | jq .
 ```
 
@@ -246,14 +276,14 @@ curl -s "http://localhost:8080/api/v1/vulnerabilities/summary/severity?region=AP
 
 ```bash
 # view options: all (default) | new | patched
-curl -s "http://localhost:8080/api/v1/vulnerabilities/scan/12345?region=APAC&view=new&startOffset=0&endOffset=100" \
+curl -s "http://localhost:8080/api/v1/vulnerabilities/scan/12345?region=APAC&view=new&startOffset=0&endOffset=1000" \
   | jq .
 ```
 
 ### All vulnerabilities on a specific host
 
 ```bash
-curl -s "http://localhost:8080/api/v1/vulnerabilities/ip/192.168.1.10?region=APAC" \
+curl -s "http://localhost:8080/api/v1/vulnerabilities/ip/192.168.1.10?region=APAC&startOffset=0&endOffset=1000" \
   | jq .
 ```
 
@@ -261,7 +291,7 @@ curl -s "http://localhost:8080/api/v1/vulnerabilities/ip/192.168.1.10?region=APA
 
 ```bash
 # Repeat pluginIds for multiple values
-curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192" \
+curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192&startOffset=0&endOffset=1000" \
   | jq .
 
 # Comma-separated form also works
@@ -272,7 +302,7 @@ curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&plug
 ### Custom filter (POST)
 
 ```bash
-curl -s -X POST "http://localhost:8080/api/v1/vulnerabilities/filter?region=EMEA&startOffset=0&endOffset=100" \
+curl -s -X POST "http://localhost:8080/api/v1/vulnerabilities/filter?region=EMEA&startOffset=0&endOffset=1000" \
   -H "Content-Type: application/json" \
   -d '[
     { "filterName": "severity",         "operator": "=",    "value": "4"    },
