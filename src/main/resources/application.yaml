@@ -1,19 +1,59 @@
 tenable:
   sc:
-    # Tenable Security Center host URL (no trailing slash)
-    base-url: https://your-security-center-host
-    username: your-username
-    password: your-password
+    # Default authentication mode applied to all endpoints that do not set their own.
+    # Options: TOKEN | API_KEY
+    auth-mode: API_KEY
 
-    # Set to true only when using self-signed certificates; disable in production with proper certs
-    ssl-verification-disabled: true
+    # Set to true only when using self-signed certificates; never enable in production.
+    ssl-verification-disabled: false
 
-    # HTTP client timeouts (milliseconds)
+    # HTTP client timeouts (milliseconds) — shared across all endpoints.
     connect-timeout: 10000
     read-timeout: 60000
 
-    # Pagination default
+    # Default page size for paginated queries.
     default-page-size: 100
+
+    # -------------------------------------------------------------------------
+    # Security Center endpoints, one entry per region.
+    # Region keys are matched case-insensitively (APAC == apac).
+    #
+    # Per-endpoint fields:
+    #   base-url   (required)  — SC host, no trailing slash
+    #   auth-mode  (optional)  — overrides the global auth-mode for this endpoint
+    #
+    #   TOKEN mode credentials:
+    #     username / password
+    #
+    #   API_KEY mode credentials:
+    #     access-key / secret-key
+    # -------------------------------------------------------------------------
+    endpoints:
+
+      APAC:
+        base-url: https://sc-apac.example.com
+        # Inherits global auth-mode: API_KEY
+        access-key: apac-access-key-placeholder
+        secret-key: apac-secret-key-placeholder
+
+      EMEA:
+        base-url: https://sc-emea.example.com
+        # Inherits global auth-mode: API_KEY
+        access-key: emea-access-key-placeholder
+        secret-key: emea-secret-key-placeholder
+
+      AMER:
+        base-url: https://sc-amer.example.com
+        # Inherits global auth-mode: API_KEY
+        access-key: amer-access-key-placeholder
+        secret-key: amer-secret-key-placeholder
+
+      APAC-GOV:
+        base-url: https://sc-apac-gov.example.com
+        # Per-endpoint override: this instance only supports session-token auth
+        auth-mode: TOKEN
+        username: apac-gov-username-placeholder
+        password: apac-gov-password-placeholder
 
 server:
   port: 8080
