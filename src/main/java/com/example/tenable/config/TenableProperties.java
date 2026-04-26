@@ -14,14 +14,24 @@ import jakarta.validation.constraints.Positive;
 @ConfigurationProperties(prefix = "tenable.sc")
 public class TenableProperties {
 
+    public enum AuthMode { TOKEN, API_KEY }
+
     @NotBlank
     private String baseUrl;
 
-    @NotBlank
+    /** Required only when authMode=TOKEN */
     private String username;
 
-    @NotBlank
+    /** Required only when authMode=TOKEN */
     private String password;
+
+    private AuthMode authMode = AuthMode.TOKEN;
+
+    /** Required when authMode=API_KEY */
+    private String accessKey;
+
+    /** Required when authMode=API_KEY */
+    private String secretKey;
 
     private boolean sslVerificationDisabled = false;
 
