@@ -60,7 +60,7 @@ public class TenableProperties {
     private int readTimeout = 60_000;
 
     @Positive
-    private int defaultPageSize = 100;
+    private int defaultPageSize = 1000;
 
     /**
      * Returns the endpoint config for the given region (case-insensitive).
