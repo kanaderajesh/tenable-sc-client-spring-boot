@@ -18,6 +18,13 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleBadRegion(IllegalArgumentException ex) {
+        log.warn("Invalid request: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(ResourceAccessException.class)
     public ResponseEntity<Map<String, String>> handleConnectivity(ResourceAccessException ex) {
         log.error("Cannot reach Tenable SC: {}", ex.getMessage());

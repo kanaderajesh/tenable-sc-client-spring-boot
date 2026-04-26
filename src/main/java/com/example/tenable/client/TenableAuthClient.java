@@ -1,6 +1,6 @@
 package com.example.tenable.client;
 
-import com.example.tenable.config.TenableProperties;
+import com.example.tenable.config.TenableProperties.EndpointConfig;
 import com.example.tenable.dto.TenableApiResponse;
 import com.example.tenable.dto.token.TokenData;
 import com.example.tenable.dto.token.TokenRequest;
@@ -14,12 +14,13 @@ import org.springframework.web.client.RestTemplate;
 /**
  * Low-level HTTP client for the Tenable SC /token endpoint.
  *
- * <p>Supports two authentication modes controlled by {@code tenable.sc.auth-mode}:
+ * <p>Supports two authentication modes per endpoint:
  * <ul>
- *   <li><b>TOKEN</b> (default) — POST /token to obtain a session token, DELETE /token to log out.
- *       Use {@link #createToken()} / {@link #buildTokenHeaders(long)} / {@link #deleteToken(long)}.</li>
- *   <li><b>API_KEY</b> — stateless; attach {@code x-apikey} header on every request.
- *       Use {@link #buildApiKeyHeaders()}. No login/logout calls are needed.</li>
+ *   <li><b>TOKEN</b> — POST /token to obtain a session token, DELETE /token to log out.
+ *       Use {@link #createToken(EndpointConfig)} / {@link #buildTokenHeaders(long)} /
+ *       {@link #deleteToken(long, EndpointConfig)}.</li>
+ *   <li><b>API_KEY</b> — stateless; attach {@code x-apikey} on every request.
+ *       Use {@link #buildApiKeyHeaders(EndpointConfig)}. No login/logout needed.</li>
  * </ul>
  */
 @Slf4j
@@ -30,15 +31,14 @@ public class TenableAuthClient {
     private static final String TOKEN_PATH = "/rest/token";
 
     private final RestTemplate tenableRestTemplate;
-    private final TenableProperties props;
 
     // -------------------------------------------------------------------------
-    // Header builders — used by VulnerabilityService to pass auth to clients
+    // Header builders
     // -------------------------------------------------------------------------
 
     /**
-     * Builds the {@code X-SecurityCenter} header for a previously obtained session token.
-     * Only used in {@link TenableProperties.AuthMode#TOKEN} mode.
+     * Builds the {@code X-SecurityCenter} header for a session token.
+     * The token value comes from {@link #createToken(EndpointConfig)}.
      */
     public HttpHeaders buildTokenHeaders(long token) {
         HttpHeaders headers = new HttpHeaders();
@@ -47,26 +47,22 @@ public class TenableAuthClient {
     }
 
     /**
-     * Builds the {@code x-apikey} header required by Tenable SC API key authentication.
-     * Only used in {@link TenableProperties.AuthMode#API_KEY} mode.
+     * Builds the {@code x-apikey} header for the given endpoint's API key credentials.
      *
      * <p>Header format: {@code x-apikey: accesskey=ACCESS_KEY; secretkey=SECRET_KEY}
      *
-     * @throws IllegalStateException if authMode is not API_KEY, or if access/secret keys are missing
+     * @throws IllegalStateException if accessKey or secretKey are missing on the endpoint
      */
-    public HttpHeaders buildApiKeyHeaders() {
-        if (props.getAuthMode() != TenableProperties.AuthMode.API_KEY) {
-            throw new IllegalStateException(
-                    "buildApiKeyHeaders() called but tenable.sc.auth-mode is TOKEN");
-        }
-        String ak = props.getAccessKey();
-        String sk = props.getSecretKey();
+    public HttpHeaders buildApiKeyHeaders(EndpointConfig endpoint) {
+        String ak = endpoint.getAccessKey();
+        String sk = endpoint.getSecretKey();
         if (ak == null || ak.isBlank() || sk == null || sk.isBlank()) {
             throw new IllegalStateException(
-                    "tenable.sc.access-key and tenable.sc.secret-key must both be set when auth-mode=API_KEY");
+                    "accessKey and secretKey must both be set for API_KEY auth on endpoint: "
+                            + endpoint.getBaseUrl());
         }
-        log.debug("Using API key authentication (accessKey prefix: {}...)",
-                ak.substring(0, Math.min(4, ak.length())));
+        log.debug("Using API key auth for {} (accessKey prefix: {}...)",
+                endpoint.getBaseUrl(), ak.substring(0, Math.min(4, ak.length())));
         HttpHeaders headers = new HttpHeaders();
         headers.set("x-apikey", "accesskey=" + ak + "; secretkey=" + sk);
         return headers;
@@ -77,23 +73,23 @@ public class TenableAuthClient {
     // -------------------------------------------------------------------------
 
     /**
-     * Authenticates with Tenable SC and returns the token data on success.
+     * Authenticates against the given endpoint and returns a session token.
      *
      * @throws TenableApiException if the server returns an error response
      */
-    public TokenData createToken() {
-        String url = props.getBaseUrl() + TOKEN_PATH;
+    public TokenData createToken(EndpointConfig endpoint) {
+        String url = endpoint.getBaseUrl() + TOKEN_PATH;
 
         TokenRequest body = TokenRequest.builder()
-                .username(props.getUsername())
-                .password(props.getPassword())
-                .releaseSession(true)   // release any stale session
+                .username(endpoint.getUsername())
+                .password(endpoint.getPassword())
+                .releaseSession(true)
                 .build();
 
         HttpHeaders headers = jsonHeaders();
         HttpEntity<TokenRequest> request = new HttpEntity<>(body, headers);
 
-        log.debug("POST {} — authenticating as '{}'", url, props.getUsername());
+        log.debug("POST {} — authenticating as '{}'", url, endpoint.getUsername());
 
         ResponseEntity<TenableApiResponse<TokenData>> response = tenableRestTemplate.exchange(
                 url,
@@ -103,17 +99,18 @@ public class TenableAuthClient {
         );
 
         TenableApiResponse<TokenData> apiResponse = requireSuccessBody(response);
-        log.info("Authentication successful — token acquired");
+        log.info("Authentication successful for {} — token acquired", endpoint.getBaseUrl());
         return apiResponse.getResponse();
     }
 
     /**
-     * Logs out by deleting the session token from Tenable SC.
+     * Logs out by deleting the session token from the given endpoint.
      *
-     * @param token the value previously returned by {@link #createToken()}
+     * @param token    the value previously returned by {@link #createToken(EndpointConfig)}
+     * @param endpoint the endpoint to log out from
      */
-    public void deleteToken(long token) {
-        String url = props.getBaseUrl() + TOKEN_PATH;
+    public void deleteToken(long token, EndpointConfig endpoint) {
+        String url = endpoint.getBaseUrl() + TOKEN_PATH;
 
         HttpHeaders headers = jsonHeaders();
         headers.set("X-SecurityCenter", String.valueOf(token));
@@ -129,7 +126,7 @@ public class TenableAuthClient {
                 new ParameterizedTypeReference<TenableApiResponse<Object>>() {}
         );
 
-        log.info("Session token invalidated");
+        log.info("Session token invalidated for {}", endpoint.getBaseUrl());
     }
 
     // -------------------------------------------------------------------------
