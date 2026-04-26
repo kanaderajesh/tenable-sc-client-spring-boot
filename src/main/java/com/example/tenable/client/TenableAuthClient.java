@@ -78,11 +78,19 @@ public class TenableAuthClient {
      * @throws TenableApiException if the server returns an error response
      */
     public TokenData createToken(EndpointConfig endpoint) {
+        String username = endpoint.getUsername();
+        String password = endpoint.getPassword();
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            throw new IllegalStateException(
+                    "username and password must both be set for TOKEN auth on endpoint: "
+                            + endpoint.getBaseUrl());
+        }
+
         String url = endpoint.getBaseUrl() + TOKEN_PATH;
 
         TokenRequest body = TokenRequest.builder()
-                .username(endpoint.getUsername())
-                .password(endpoint.getPassword())
+                .username(username)
+                .password(password)
                 .releaseSession(true)
                 .build();
 
