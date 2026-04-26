@@ -203,6 +203,89 @@ POST /api/v1/vulnerabilities/filter?region=EMEA&startOffset=0&endOffset=100
 
 ---
 
+## Local Testing with curl
+
+The examples below assume the application is running on `localhost:8080`. Replace `APAC` with any region you have configured.
+
+### Paged vulnerability list
+
+```bash
+curl -s "http://localhost:8080/api/v1/vulnerabilities?region=APAC&startOffset=0&endOffset=50" \
+  | jq .
+```
+
+### All vulnerabilities (auto-paginated)
+
+```bash
+curl -s "http://localhost:8080/api/v1/vulnerabilities/all?region=APAC" \
+  | jq .
+```
+
+### Critical vulnerabilities only
+
+```bash
+curl -s "http://localhost:8080/api/v1/vulnerabilities/critical?region=EMEA&startOffset=0&endOffset=100" \
+  | jq .
+```
+
+### High vulnerabilities only
+
+```bash
+curl -s "http://localhost:8080/api/v1/vulnerabilities/high?region=AMER&startOffset=0&endOffset=100" \
+  | jq .
+```
+
+### Vulnerability counts by severity
+
+```bash
+curl -s "http://localhost:8080/api/v1/vulnerabilities/summary/severity?region=APAC" \
+  | jq .
+```
+
+### Vulnerabilities from a specific scan
+
+```bash
+# view options: all (default) | new | patched
+curl -s "http://localhost:8080/api/v1/vulnerabilities/scan/12345?region=APAC&view=new&startOffset=0&endOffset=100" \
+  | jq .
+```
+
+### All vulnerabilities on a specific host
+
+```bash
+curl -s "http://localhost:8080/api/v1/vulnerabilities/ip/192.168.1.10?region=APAC" \
+  | jq .
+```
+
+### IP → plugin ID map for a set of plugins
+
+```bash
+# Repeat pluginIds for multiple values
+curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192" \
+  | jq .
+
+# Comma-separated form also works
+curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881,51192" \
+  | jq .
+```
+
+### Custom filter (POST)
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/vulnerabilities/filter?region=EMEA&startOffset=0&endOffset=100" \
+  -H "Content-Type: application/json" \
+  -d '[
+    { "filterName": "severity",         "operator": "=",    "value": "4"    },
+    { "filterName": "exploitAvailable", "operator": "=",    "value": "true" },
+    { "filterName": "ip",               "operator": "like", "value": "10.0" }
+  ]' \
+  | jq .
+```
+
+> **Tip:** Remove `| jq .` if `jq` is not installed. Add `-o response.json` to save the output to a file.
+
+---
+
 ## Project Structure
 
 ```
