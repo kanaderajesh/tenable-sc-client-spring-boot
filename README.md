@@ -44,13 +44,13 @@ tenable:
     read-timeout: 60000                # milliseconds
     default-page-size: 1000
 
-    # Client IP allowlist (optional).
-    # When non-empty, requests from unlisted IPs are rejected with 403 Forbidden.
+    # Client allowlist (optional) — accepts IPs, FQDNs, or NetBIOS short names.
+    # When non-empty, requests from unlisted clients are rejected with 403 Forbidden.
     # Omit or leave empty to allow all clients.
-    # Respects X-Forwarded-For for reverse-proxy deployments.
-    allowed-client-ips:
+    allowed-clients:
       - 10.0.0.5
-      - 192.168.1.10
+      - myserver.example.com
+      - MYSERVER
 
     endpoints:
       APAC:
@@ -87,24 +87,30 @@ server:
 
 > The application fails fast with a clear error message if the required credentials for the chosen auth mode are missing or blank.
 
-### Client IP allowlist
+### Client allowlist (IP + hostname)
 
-Set `tenable.sc.allowed-client-ips` to restrict which client IPs may call the API. Leave the list empty (the default) to allow all clients.
+Set `tenable.sc.allowed-clients` to restrict which clients may call the API. Each entry may be an **IP address**, a **fully-qualified domain name (FQDN)**, or a **NetBIOS / short hostname**. Matching is case-insensitive. Leave the list empty (the default) to allow all clients.
 
 ```yaml
 tenable:
   sc:
-    allowed-client-ips:
-      - 10.0.0.5
-      - 192.168.1.10
+    allowed-clients:
+      - 10.0.0.5              # exact IP
+      - myserver.example.com  # FQDN
+      - MYSERVER              # NetBIOS / short name (first DNS label)
 ```
+
+For each inbound request the application:
+1. Determines the client IP from `X-Forwarded-For` (first hop) or `REMOTE_ADDR`
+2. Performs a reverse-DNS lookup to obtain the FQDN and short name (first label)
+3. Checks whether the IP, FQDN, **or** short name appears in the allowlist
 
 | Scenario | HTTP Status |
 |----------|-------------|
-| IP is in the allowlist (or list is empty) | Request proceeds normally |
-| IP is **not** in the allowlist | `403 Forbidden` — `{"error":"Access denied: your IP address is not allowed"}` |
+| Client matches (or list is empty) | Request proceeds normally |
+| Client does **not** match | `403 Forbidden` — `{"error":"Access denied: your IP address or hostname is not allowed"}` |
 
-When the application sits behind a reverse proxy, the check uses the **first value** of the `X-Forwarded-For` header (the originating client). For direct connections it falls back to `REMOTE_ADDR`.
+When the application sits behind a reverse proxy, the check uses the **first value** of the `X-Forwarded-For` header. For direct connections it falls back to `REMOTE_ADDR`.
 
 ---
 

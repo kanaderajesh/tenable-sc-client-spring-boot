@@ -14,16 +14,17 @@ tenable:
     # Default page size for paginated queries.
     default-page-size: 1000
 
-    # Optional client IP allowlist.
-    # When non-empty, only requests from these IPs are accepted (403 otherwise).
-    # Leave empty (or omit) to allow all client IPs.
-    # Supports X-Forwarded-For for deployments behind a reverse proxy.
+    # Optional client allowlist.
+    # Entries may be IP addresses, fully-qualified domain names, or NetBIOS short names.
+    # Matching is case-insensitive; reverse-DNS lookup is used to resolve hostnames.
+    # When non-empty, requests from unlisted clients are rejected with 403 Forbidden.
+    # Leave empty (or omit) to allow all clients.
     #
-    # allowed-client-ips:
+    # allowed-clients:
     #   - 10.0.0.5
-    #   - 192.168.1.10
-    #   - 172.16.0.0
-    allowed-client-ips: []
+    #   - myserver.example.com
+    #   - MYSERVER              # NetBIOS / short name
+    allowed-clients: []
 
     # -------------------------------------------------------------------------
     # Security Center endpoints, one entry per region.
