@@ -42,7 +42,15 @@ tenable:
     ssl-verification-disabled: false   # set true only for self-signed certs in dev/lab
     connect-timeout: 10000             # milliseconds
     read-timeout: 60000                # milliseconds
-    default-page-size: 100
+    default-page-size: 1000
+
+    # Client IP allowlist (optional).
+    # When non-empty, requests from unlisted IPs are rejected with 403 Forbidden.
+    # Omit or leave empty to allow all clients.
+    # Respects X-Forwarded-For for reverse-proxy deployments.
+    allowed-client-ips:
+      - 10.0.0.5
+      - 192.168.1.10
 
     endpoints:
       APAC:
@@ -78,6 +86,25 @@ server:
 | `TOKEN` | `username`, `password` | Calls `POST /rest/token` to obtain a session, then `DELETE /rest/token` after every request (even on error). |
 
 > The application fails fast with a clear error message if the required credentials for the chosen auth mode are missing or blank.
+
+### Client IP allowlist
+
+Set `tenable.sc.allowed-client-ips` to restrict which client IPs may call the API. Leave the list empty (the default) to allow all clients.
+
+```yaml
+tenable:
+  sc:
+    allowed-client-ips:
+      - 10.0.0.5
+      - 192.168.1.10
+```
+
+| Scenario | HTTP Status |
+|----------|-------------|
+| IP is in the allowlist (or list is empty) | Request proceeds normally |
+| IP is **not** in the allowlist | `403 Forbidden` — `{"error":"Access denied: your IP address is not allowed"}` |
+
+When the application sits behind a reverse proxy, the check uses the **first value** of the `X-Forwarded-For` header (the originating client). For direct connections it falls back to `REMOTE_ADDR`.
 
 ---
 
