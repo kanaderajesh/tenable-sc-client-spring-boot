@@ -10,7 +10,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Positive;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -61,6 +63,21 @@ public class TenableProperties {
 
     @Positive
     private int defaultPageSize = 1000;
+
+    /**
+     * Optional client IP allowlist. When non-empty, every inbound request must originate
+     * from one of the listed addresses (checked against {@code X-Forwarded-For} first,
+     * then {@code REMOTE_ADDR}). An empty list disables the check (allow all).
+     *
+     * <p>Example YAML:
+     * <pre>
+     * tenable.sc:
+     *   allowed-client-ips:
+     *     - 10.0.0.5
+     *     - 192.168.1.0
+     * </pre>
+     */
+    private List<String> allowedClientIps = new ArrayList<>();
 
     /**
      * Returns the endpoint config for the given region (case-insensitive).
