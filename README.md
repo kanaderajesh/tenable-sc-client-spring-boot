@@ -144,7 +144,7 @@ All endpoints are under `/api/v1/vulnerabilities`. **Every endpoint requires a `
 | `GET` | `/api/v1/vulnerabilities/summary/severity` | Vulnerability counts grouped by severity |
 | `GET` | `/api/v1/vulnerabilities/scan/{scanId}` | Vulnerabilities from a specific scan run |
 | `GET` | `/api/v1/vulnerabilities/ip/{ipAddress}` | All vulnerabilities found on a specific host |
-| `GET` | `/api/v1/vulnerabilities/by-plugin` | IP → plugin ID map for a set of plugin IDs |
+| `POST` | `/api/v1/vulnerabilities/by-plugin` | Plugin detections filtered by plugin IDs and optional IP list |
 | `POST` | `/api/v1/vulnerabilities/filter` | Query with a custom filter list |
 
 ---
@@ -157,7 +157,7 @@ All endpoints are under `/api/v1/vulnerabilities`. **Every endpoint requires a `
 | `startOffset` | Paged endpoints | No | `0` | Start index for pagination |
 | `endOffset` | Paged endpoints | No | `1000` | End index for pagination |
 | `view` | `/scan/{scanId}` | No | `all` | `all` \| `new` \| `patched` |
-| `pluginIds` | `/by-plugin` | Yes | — | One or more plugin IDs (repeat param or comma-separated) |
+| `pluginIds` | `/by-plugin` (deprecated GET) | Yes | — | One or more plugin IDs (repeat param or comma-separated) |
 
 ---
 
@@ -214,19 +214,23 @@ GET /api/v1/vulnerabilities/ip/192.168.1.10?region=APAC&startOffset=0&endOffset=
 
 ---
 
-### `GET /api/v1/vulnerabilities/by-plugin`
+### `POST /api/v1/vulnerabilities/by-plugin`
 
-Finds every host where any of the specified plugins have been detected. Returns a paginated response where `results` is a sorted map of IP address to a deduplicated list of matched plugin IDs. If the same plugin is found on multiple ports of a host, it appears once in the list.
-
-```
-GET /api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192&startOffset=0&endOffset=1000
-```
-
-Comma-separated plugin IDs are also accepted:
+Returns plugin detections filtered by one or more plugin IDs and an optional list of IP addresses. Each result row contains the plugin ID, the host IP address, and the raw plugin output text. Rows sharing the same combination of plugin ID, IP, and text (e.g. the same plugin found on multiple ports) are deduplicated.
 
 ```
-GET /api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881,51192
+POST /api/v1/vulnerabilities/by-plugin?region=APAC&startOffset=0&endOffset=1000
 ```
+
+**Request body:**
+```json
+{
+  "pluginIds":   ["10881", "51192"],
+  "ipAddresses": ["10.0.0.5", "192.168.1.3"]
+}
+```
+
+Omit `ipAddresses` (or send an empty list) to include results for all hosts.
 
 **Response:**
 ```json
@@ -235,11 +239,11 @@ GET /api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881,51192
   "endOffset": 1000,
   "totalRecords": 3,
   "returnedRecords": 3,
-  "results": {
-    "10.0.0.5":    ["10881", "51192"],
-    "10.0.0.12":   ["51192"],
-    "192.168.1.3": ["10881"]
-  }
+  "results": [
+    { "pluginId": "10881", "ipAddress": "10.0.0.5",    "pluginText": "Plugin output for 10881..." },
+    { "pluginId": "51192", "ipAddress": "10.0.0.5",    "pluginText": "Plugin output for 51192..." },
+    { "pluginId": "10881", "ipAddress": "192.168.1.3", "pluginText": "Plugin output for 10881..." }
+  ]
 }
 ```
 
@@ -320,15 +324,24 @@ curl -s "http://localhost:8080/api/v1/vulnerabilities/ip/192.168.1.10?region=APA
   | jq .
 ```
 
-### IP → plugin ID map for a set of plugins
+### Plugin detections by plugin IDs (all hosts)
 
 ```bash
-# Repeat pluginIds for multiple values
-curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881&pluginIds=51192&startOffset=0&endOffset=1000" \
+curl -s -X POST "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&startOffset=0&endOffset=1000" \
+  -H "Content-Type: application/json" \
+  -d '{ "pluginIds": ["10881", "51192"] }' \
   | jq .
+```
 
-# Comma-separated form also works
-curl -s "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&pluginIds=10881,51192" \
+### Plugin detections by plugin IDs, filtered to specific hosts
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=APAC&startOffset=0&endOffset=1000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pluginIds":   ["10881", "51192"],
+    "ipAddresses": ["10.0.0.5", "192.168.1.3"]
+  }' \
   | jq .
 ```
 
