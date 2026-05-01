@@ -7,8 +7,7 @@ import java.util.List;
 /**
  * Request body for {@code POST /api/v1/vulnerabilities/by-plugin}.
  *
- * <p>{@code pluginIds} is required. {@code ipAddresses} is optional;
- * when provided it narrows results to only those hosts.
+ * <p>{@code pluginIds} is required. {@code ipAddresses} and {@code columns} are optional.
  */
 @Data
 public class ByPluginRequest {
@@ -21,4 +20,12 @@ public class ByPluginRequest {
      * When omitted or empty all hosts are included.
      */
     private List<String> ipAddresses;
+
+    /**
+     * Optional list of Tenable SC field names to return in each result row.
+     * When omitted or empty all available fields are returned.
+     *
+     * <p>Example: {@code ["pluginID", "ip", "severity", "pluginText"]}
+     */
+    private List<String> columns;
 }
