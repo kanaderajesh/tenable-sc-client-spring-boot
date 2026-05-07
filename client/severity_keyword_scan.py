@@ -224,9 +224,9 @@ def match_keywords(
 def build_fieldnames(columns: list[str], include_plugin_text: bool) -> list[str]:
     """
     Return the ordered CSV column list:
-      severityLabel | requested columns (minus pluginText if not requested) | matchedKeywords
+      severityLabel | keyword | requested columns (minus pluginText if not requested) | matchedKeywords
     """
-    fields = ["severityLabel"] + list(columns)
+    fields = ["severityLabel", "keyword"] + list(columns)
     if not include_plugin_text and "pluginText" in fields:
         fields.remove("pluginText")
     if "matchedKeywords" not in fields:
@@ -237,10 +237,11 @@ def build_fieldnames(columns: list[str], include_plugin_text: bool) -> list[str]
 def flatten_record(
     record: dict[str, Any],
     severity_label: str,
-    matched: list[str],
+    keyword: str,
+    all_matched: list[str],
 ) -> dict[str, Any]:
-    """Flatten a raw SC record into a CSV row dict."""
-    row: dict[str, Any] = {"severityLabel": severity_label}
+    """Flatten a raw SC record into a CSV row dict for one matched keyword."""
+    row: dict[str, Any] = {"severityLabel": severity_label, "keyword": keyword}
     for key, value in record.items():
         if isinstance(value, dict):
             row[key] = json.dumps(value, ensure_ascii=False)
@@ -248,7 +249,7 @@ def flatten_record(
             row[key] = " | ".join(str(v) for v in value)
         else:
             row[key] = value
-    row["matchedKeywords"] = " | ".join(matched)
+    row["matchedKeywords"] = " | ".join(all_matched)
     return row
 
 
@@ -366,7 +367,8 @@ def scan_severity(
             for record in page_results:
                 matched = match_keywords(record, original_keywords, lower_keywords)
                 if matched:
-                    pending_rows.append(flatten_record(record, label, matched))
+                    for kw in matched:
+                        pending_rows.append(flatten_record(record, label, kw, matched))
                     matched_this_page += 1
 
             severity_matched += matched_this_page
