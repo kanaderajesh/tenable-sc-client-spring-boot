@@ -350,9 +350,17 @@ def main() -> None:
             print(f"ERROR: --filters is not valid JSON: {exc}", file=sys.stderr)
             sys.exit(1)
 
+    # When a keywords file is supplied, append to an existing CSV so that repeated
+    # runs accumulate results rather than overwriting previous output.
+    use_keywords_file = bool(args.keywords_file.strip())
+    output_exists = os.path.isfile(args.output)
+    file_mode = "a" if (use_keywords_file and output_exists) else "w"
+    write_header = not (use_keywords_file and output_exists)
+
     session = requests.Session()
     session.headers.update({"Content-Type": "application/json"})
 
+    write_mode_label = "append" if file_mode == "a" else "overwrite"
     print("Plugin-text-search export (server-side filter, multi-keyword)")
     print(f"  Base URL      : {args.base_url}")
     print(f"  Region        : {args.region}")
@@ -360,7 +368,7 @@ def main() -> None:
     print(f"  Columns       : {columns or '(all)'}")
     print(f"  Filters       : {filters or '(none)'}")
     print(f"  Page size     : {args.page_size}")
-    print(f"  Output        : {args.output}")
+    print(f"  Output        : {args.output} ({write_mode_label})")
     print()
 
     all_rows: list[dict[str, Any]] = []
@@ -387,17 +395,19 @@ def main() -> None:
 
     fieldnames = build_fieldnames(all_rows, columns)
 
-    with open(args.output, "w", newline="", encoding="utf-8") as csvfile:
+    with open(args.output, file_mode, newline="", encoding="utf-8") as csvfile:
         writer = csv.DictWriter(
             csvfile,
             fieldnames=fieldnames,
             extrasaction="ignore",
             quoting=csv.QUOTE_MINIMAL,
         )
-        writer.writeheader()
+        if write_header:
+            writer.writeheader()
         writer.writerows(all_rows)
 
-    print(f"Exported {len(all_rows)} record(s) to: {args.output}")
+    action = "Appended" if file_mode == "a" else "Exported"
+    print(f"{action} {len(all_rows)} record(s) to: {args.output}")
 
 
 if __name__ == "__main__":
