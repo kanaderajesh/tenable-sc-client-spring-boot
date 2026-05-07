@@ -67,6 +67,7 @@ Examples
 import argparse
 import csv
 import json
+import math
 import os
 import sys
 import time
@@ -264,9 +265,11 @@ def main() -> None:
 
     while True:
         page_number += 1
+        end_offset = min(start_offset + args.page_size, total_records) if total_records else start_offset + args.page_size
+        total_pages = math.ceil(total_records / args.page_size) if total_records else "?"
         print(
-            f"  Fetching page {page_number}: "
-            f"offsets {start_offset}–{start_offset + args.page_size} ...",
+            f"  Page {page_number}/{total_pages} | "
+            f"records {start_offset + 1}–{end_offset} of {total_records or '?'} | fetching ...",
             end=" ",
             flush=True,
         )
@@ -291,6 +294,8 @@ def main() -> None:
 
         if total_records is None:
             total_records = data.get("totalRecords", 0)
+            total_pages = math.ceil(total_records / args.page_size) if total_records else 1
+            end_offset = min(start_offset + args.page_size, total_records)
 
         page_results: list[dict] = data.get("results") or []
         returned = data.get("returnedRecords", len(page_results))
@@ -299,10 +304,12 @@ def main() -> None:
         for result in page_results:
             all_rows.append(flatten_record(result))
 
+        pct = int(min(start_offset + args.page_size, total_records) / total_records * 100) if total_records else 0
         print(
-            f"SC records on page: {returned}, "
-            f"keyword matches: {matched_this_page}, "
-            f"total collected: {len(all_rows)}"
+            f"done | SC records this page: {returned} | "
+            f"matched this page: {matched_this_page} | "
+            f"total matched: {len(all_rows)} | "
+            f"progress: {min(start_offset + args.page_size, total_records)}/{total_records} ({pct}%)"
         )
 
         # Advance offset
@@ -311,7 +318,8 @@ def main() -> None:
         # Stop when we have consumed all SC records
         if total_records is not None and start_offset >= total_records:
             print(
-                f"\n  All {total_records} SC records processed across {page_number} page(s)."
+                f"\n  Completed: {total_records} SC records processed across "
+                f"{page_number} page(s), {len(all_rows)} total keyword matches."
             )
             break
 
