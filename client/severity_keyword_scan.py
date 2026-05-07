@@ -28,6 +28,7 @@ Options
   --severities     Comma-separated severity levels to scan  (default: 4,3,2,1)
   --page-size      Records fetched per API call              (default: 1000)
   --output         Output CSV file path                      (default: severity_keyword_results.csv)
+  --log-level      Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
 
 Keywords file format
 --------------------
@@ -42,7 +43,8 @@ Keywords file format
 Environment variables (override defaults, overridden by CLI flags)
 ------------------------------------------------------------------
   TENABLE_BASE_URL, TENABLE_REGION, TENABLE_KEYWORDS_FILE,
-  TENABLE_COLUMNS, TENABLE_SEVERITIES, TENABLE_PAGE_SIZE, TENABLE_OUTPUT
+  TENABLE_COLUMNS, TENABLE_SEVERITIES, TENABLE_PAGE_SIZE, TENABLE_OUTPUT,
+  TENABLE_LOG_LEVEL
 
 Examples
 --------
@@ -64,6 +66,7 @@ Examples
 import argparse
 import csv
 import json
+import logging
 import math
 import os
 import sys
@@ -71,6 +74,8 @@ import time
 from typing import Any
 
 import requests
+
+log = logging.getLogger(__name__)
 
 # Maps severity integer value to a human-readable label
 SEVERITY_LABELS: dict[str, str] = {
@@ -132,7 +137,22 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("TENABLE_OUTPUT", "severity_keyword_results.csv"),
         help="Output CSV file path (default: severity_keyword_results.csv)",
     )
+    p.add_argument(
+        "--log-level",
+        default=os.getenv("TENABLE_LOG_LEVEL", "INFO"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging verbosity (default: INFO)",
+    )
     return p.parse_args()
+
+
+def setup_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level),
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+        stream=sys.stderr,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +354,10 @@ def scan_severity(
                 flush=True,
             )
 
+            log.debug(
+                "Fetching severity=%s page=%d offset=%d",
+                severity, page_number, start_offset,
+            )
             try:
                 data = fetch_page(
                     session=session,
@@ -349,10 +373,19 @@ def scan_severity(
                     f"\n  ERROR: HTTP {exc.response.status_code} — {exc.response.text}",
                     file=sys.stderr,
                 )
+                log.error(
+                    "HTTP error during severity=%s page=%d offset=%d: %s %s",
+                    severity, page_number, start_offset,
+                    exc.response.status_code, exc.response.text,
+                )
                 flush_pending()
                 raise
             except requests.RequestException as exc:
                 print(f"\n  ERROR: Request failed — {exc}", file=sys.stderr)
+                log.error(
+                    "Request error during severity=%s page=%d offset=%d: %s",
+                    severity, page_number, start_offset, exc,
+                )
                 flush_pending()
                 raise
 
@@ -360,6 +393,7 @@ def scan_severity(
                 total_records = data.get("totalRecords", 0)
                 total_pages = math.ceil(total_records / page_size) if total_records else 1
                 end_offset = min(start_offset + page_size, total_records)
+                log.info("severity=%s total_records=%d", severity, total_records)
 
             page_results: list[dict] = data.get("results") or []
             matched_this_page = 0
@@ -368,6 +402,10 @@ def scan_severity(
                 matched = match_keywords(record, original_keywords, lower_keywords)
                 if matched:
                     for kw in matched:
+                        log.debug(
+                            "Match: keyword=%r pluginID=%s severity=%s",
+                            kw, record.get("pluginID", "?"), severity,
+                        )
                         pending_rows.append(flatten_record(record, label, kw, matched))
                     matched_this_page += 1
 
@@ -405,6 +443,12 @@ def scan_severity(
 
     except KeyboardInterrupt:
         flush_pending()
+        log.warning(
+            "KeyboardInterrupt: severity=%s page=%d keywords=%s — "
+            "flushed pending rows; overall processed=%d matched=%d",
+            severity, page_number, original_keywords,
+            counters["records_processed"], counters["total_matched"],
+        )
         print(
             f"\n  Interrupted during [{label}] after {page_number} page(s). "
             f"Overall: {counters['records_processed']} records processed, "
@@ -422,6 +466,7 @@ def scan_severity(
 
 def main() -> None:
     args = parse_args()
+    setup_logging(args.log_level)
 
     if not args.region.strip():
         print("ERROR: --region is required.", file=sys.stderr)
@@ -455,6 +500,15 @@ def main() -> None:
 
     fieldnames = build_fieldnames(requested_columns, include_plugin_text_in_csv)
 
+    log.info(
+        "Starting scan: region=%s severities=%s keywords=%d file=%s",
+        args.region,
+        [f"{s}={SEVERITY_LABELS[s]}" for s in severities],
+        len(keywords),
+        args.keywords_file,
+    )
+    log.debug("Keywords loaded: %s", keywords)
+
     print("Severity keyword scan")
     print(f"  Base URL      : {args.base_url}")
     print(f"  Region        : {args.region}")
@@ -463,6 +517,7 @@ def main() -> None:
     print(f"  Columns       : {requested_columns}")
     print(f"  Page size     : {args.page_size}")
     print(f"  Output        : {args.output}")
+    print(f"  Log level     : {args.log_level}")
     print()
 
     session = requests.Session()
@@ -504,6 +559,11 @@ def main() -> None:
                 sys.exit(130)
 
     except KeyboardInterrupt:
+        log.warning(
+            "KeyboardInterrupt between severity levels; "
+            "overall processed=%d matched=%d",
+            counters["records_processed"], counters["total_matched"],
+        )
         print(
             f"\nInterrupted between severity levels. "
             f"{grand_total} total match(es) saved to {args.output} | "
@@ -511,6 +571,10 @@ def main() -> None:
         )
         sys.exit(130)
     except Exception as exc:
+        log.exception(
+            "Unexpected error after processing %d records / %d matches: %s",
+            counters["records_processed"], counters["total_matched"], exc,
+        )
         print(f"\nUnexpected error: {exc}", file=sys.stderr)
         print(
             f"{grand_total} match(es) collected so far have been saved to {args.output} | "
