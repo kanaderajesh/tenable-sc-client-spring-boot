@@ -67,6 +67,7 @@ Examples
 import argparse
 import csv
 import json
+import math
 import os
 import sys
 import time
@@ -222,8 +223,11 @@ def fetch_all_for_keyword(
 
     while True:
         page_number += 1
+        total_pages = math.ceil(total_records / page_size) if total_records else "?"
+        end_offset = min(start_offset + page_size, total_records) if total_records else start_offset + page_size
         print(
-            f"    page {page_number}: offsets {start_offset}–{start_offset + page_size} ...",
+            f"    Page {page_number}/{total_pages} | "
+            f"records {start_offset + 1}–{end_offset} of {total_records or '?'} | fetching ...",
             end=" ",
             flush=True,
         )
@@ -251,6 +255,8 @@ def fetch_all_for_keyword(
 
         if total_records is None:
             total_records = data.get("totalRecords", 0)
+            total_pages = math.ceil(total_records / page_size) if total_records else 1
+            end_offset = min(start_offset + page_size, total_records)
 
         page_results: list[dict] = data.get("results") or []
         returned = data.get("returnedRecords", len(page_results))
@@ -260,10 +266,17 @@ def fetch_all_for_keyword(
             row.update(flatten_values(record))
             rows.append(row)
 
-        print(f"records: {returned}, running total for this keyword: {len(rows)}")
+        processed = min(start_offset + page_size, total_records)
+        pct = int(processed / total_records * 100) if total_records else 0
+        print(
+            f"done | records this page: {returned} | "
+            f"collected: {len(rows)} | "
+            f"progress: {processed}/{total_records} ({pct}%)"
+        )
 
         start_offset += page_size
         if total_records is not None and start_offset >= total_records:
+            print(f"    Completed '{keyword}': {total_records} records processed, {len(rows)} collected.")
             break
 
         time.sleep(0.1)
