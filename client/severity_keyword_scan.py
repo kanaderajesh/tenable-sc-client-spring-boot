@@ -288,18 +288,23 @@ def scan_severity(
     output_path: str,
     page_size: int,
     first_write: bool,
+    counters: dict[str, int],
 ) -> tuple[int, bool]:
     """
     Page through all vulnerabilities for one severity level, match keywords
     client-side, and flush matching rows to CSV after every page.
 
-    Returns (total_matched, was_interrupted).
+    counters is a shared dict with keys 'records_processed' and 'total_matched'
+    that accumulates grand totals across all severity levels so each page line
+    can show overall progress.
+
+    Returns (severity_matched, was_interrupted).
     """
     label = SEVERITY_LABELS.get(severity, f"Severity-{severity}")
     start_offset = 0
     total_records: int | None = None
     page_number = 0
-    total_matched = 0
+    severity_matched = 0
     pending_rows: list[dict[str, Any]] = []
 
     def flush_pending() -> None:
@@ -322,7 +327,7 @@ def scan_severity(
 
             print(
                 f"    Page {page_number}/{total_pages} | "
-                f"records {start_offset + 1}–{end_offset} of {total_records or '?'} | "
+                f"[{label}] records {start_offset + 1}–{end_offset} of {total_records or '?'} | "
                 f"fetching ...",
                 end=" ",
                 flush=True,
@@ -364,25 +369,33 @@ def scan_severity(
                     pending_rows.append(flatten_record(record, label, matched))
                     matched_this_page += 1
 
-            total_matched += matched_this_page
+            severity_matched += matched_this_page
+
+            # Update shared grand-total counters
+            counters["records_processed"] += len(page_results)
+            counters["total_matched"] += matched_this_page
 
             # Flush this page's matches immediately so nothing is lost
             flush_pending()
 
             processed = min(start_offset + page_size, total_records) if total_records else end_offset
-            pct = int(processed / total_records * 100) if total_records else 0
+            sev_pct = int(processed / total_records * 100) if total_records else 0
             print(
-                f"done | records this page: {len(page_results)} | "
-                f"matched: {matched_this_page} | "
-                f"total matched [{label}]: {total_matched} | "
-                f"progress: {processed}/{total_records} ({pct}%)"
+                f"done | "
+                f"this page: {len(page_results)} records / {matched_this_page} matched | "
+                f"[{label}] progress: {processed}/{total_records} ({sev_pct}%) — "
+                f"{severity_matched} matched | "
+                f"OVERALL: {counters['records_processed']} processed / "
+                f"{counters['total_matched']} matched"
             )
 
             start_offset += page_size
             if total_records is not None and start_offset >= total_records:
                 print(
                     f"    Completed [{label}]: {total_records} records scanned, "
-                    f"{total_matched} keyword matches found."
+                    f"{severity_matched} keyword matches found. "
+                    f"| Overall so far: {counters['records_processed']} records / "
+                    f"{counters['total_matched']} matched"
                 )
                 break
 
@@ -392,12 +405,13 @@ def scan_severity(
         flush_pending()
         print(
             f"\n  Interrupted during [{label}] after {page_number} page(s). "
-            f"{total_matched} match(es) saved so far.",
+            f"Overall: {counters['records_processed']} records processed, "
+            f"{counters['total_matched']} match(es) saved.",
             flush=True,
         )
-        return total_matched, True
+        return severity_matched, True
 
-    return total_matched, False
+    return severity_matched, False
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +468,7 @@ def main() -> None:
 
     grand_total = 0
     first_write = True  # tracks whether we've written the header yet
+    counters: dict[str, int] = {"records_processed": 0, "total_matched": 0}
 
     try:
         for sev in severities:
@@ -471,6 +486,7 @@ def main() -> None:
                 output_path=args.output,
                 page_size=args.page_size,
                 first_write=first_write,
+                counters=counters,
             )
             grand_total += matched
             # Update first_write: once any rows have been written the file exists
@@ -480,19 +496,24 @@ def main() -> None:
 
             if interrupted:
                 print(
-                    f"Scan interrupted. {grand_total} total match(es) saved to {args.output}"
+                    f"Scan interrupted. {grand_total} total match(es) saved to {args.output} | "
+                    f"Overall: {counters['records_processed']} records processed"
                 )
                 sys.exit(130)
 
     except KeyboardInterrupt:
         print(
             f"\nInterrupted between severity levels. "
-            f"{grand_total} total match(es) saved to {args.output}"
+            f"{grand_total} total match(es) saved to {args.output} | "
+            f"Overall: {counters['records_processed']} records processed"
         )
         sys.exit(130)
     except Exception as exc:
         print(f"\nUnexpected error: {exc}", file=sys.stderr)
-        print(f"{grand_total} match(es) collected so far have been saved to {args.output}")
+        print(
+            f"{grand_total} match(es) collected so far have been saved to {args.output} | "
+            f"Overall: {counters['records_processed']} records processed"
+        )
         raise
 
     if grand_total == 0:
