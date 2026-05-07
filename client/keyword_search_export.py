@@ -8,27 +8,59 @@ Usage
 
 Options
 -------
-  --base-url   Base URL of the Spring Boot API   (default: http://localhost:8080)
-  --region     Tenable SC region name             (default: APAC)
-  --keywords   Comma-separated list of keywords   (required)
-  --columns    Comma-separated list of columns    (optional; omit for all fields)
-  --filters    JSON array string of filter objects (optional)
-  --page-size  Records per page                   (default: 1000)
-  --output     Output CSV file path               (default: keyword_search_results.csv)
+  --base-url       Base URL of the Spring Boot API   (default: http://localhost:8080)
+  --region         Tenable SC region name             (default: APAC)
+  --keywords       Comma-separated list of keywords   (optional if --keywords-file given)
+  --keywords-file  Path to a file with one keyword per line; blank lines and lines
+                   starting with '#' are ignored      (optional if --keywords given)
+  --columns        Comma-separated list of columns    (optional; omit for all fields)
+  --filters        JSON array string of filter objects (optional)
+  --page-size      Records per page                   (default: 1000)
+  --output         Output CSV file path               (default: keyword_search_results.csv)
+
+At least one of --keywords or --keywords-file must be provided. Both may be used
+together — the keyword lists are merged and deduplicated while preserving order.
+
+Keywords file format
+--------------------
+  One keyword per line. Blank lines and lines starting with '#' are ignored.
+
+  Example keywords.txt:
+    # CVE identifiers
+    CVE-2021-44228
+    CVE-2022-22965
+
+    # product names
+    log4j
+    spring4shell
 
 Environment variables (override defaults, overridden by CLI flags)
 ------------------------------------------------------------------
-  TENABLE_BASE_URL, TENABLE_REGION, TENABLE_KEYWORDS,
+  TENABLE_BASE_URL, TENABLE_REGION, TENABLE_KEYWORDS, TENABLE_KEYWORDS_FILE,
   TENABLE_COLUMNS, TENABLE_FILTERS, TENABLE_PAGE_SIZE, TENABLE_OUTPUT
 
-Example
--------
+Examples
+--------
+  # Keywords inline
   python keyword_search_export.py \\
     --base-url http://localhost:8080 \\
     --region APAC \\
     --keywords "CVE-2021-44228,log4j,remote code execution" \\
     --columns "pluginID,ip,pluginName,severity,pluginText" \\
     --filters '[{"filterName":"severity","operator":"=","value":"4"}]' \\
+    --output results.csv
+
+  # Keywords from file
+  python keyword_search_export.py \\
+    --region APAC \\
+    --keywords-file keywords.txt \\
+    --output results.csv
+
+  # Both (merged)
+  python keyword_search_export.py \\
+    --region APAC \\
+    --keywords "extra-keyword" \\
+    --keywords-file keywords.txt \\
     --output results.csv
 """
 
@@ -65,6 +97,12 @@ def parse_args() -> argparse.Namespace:
         "--keywords",
         default=os.getenv("TENABLE_KEYWORDS", ""),
         help="Comma-separated keywords to search for in plugin output text",
+    )
+    p.add_argument(
+        "--keywords-file",
+        default=os.getenv("TENABLE_KEYWORDS_FILE", ""),
+        metavar="FILE",
+        help="Path to a file with one keyword per line (blank lines and '#' comments ignored)",
     )
     p.add_argument(
         "--columns",
@@ -155,10 +193,36 @@ def collect_fieldnames(all_rows: list[dict[str, Any]]) -> list[str]:
 def main() -> None:
     args = parse_args()
 
-    # Validate keywords
-    raw_keywords = [k.strip() for k in args.keywords.split(",") if k.strip()]
+    # Collect keywords from --keywords (comma-separated)
+    raw_keywords: list[str] = [k.strip() for k in args.keywords.split(",") if k.strip()]
+
+    # Collect keywords from --keywords-file (one per line, # comments, blank lines ignored)
+    keywords_file = args.keywords_file.strip()
+    if keywords_file:
+        if not os.path.isfile(keywords_file):
+            print(f"ERROR: --keywords-file '{keywords_file}' not found.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            with open(keywords_file, encoding="utf-8") as fh:
+                for line in fh:
+                    word = line.strip()
+                    if word and not word.startswith("#"):
+                        raw_keywords.append(word)
+        except OSError as exc:
+            print(f"ERROR: Cannot read --keywords-file: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    # Deduplicate while preserving insertion order
+    seen: dict[str, None] = {}
+    for kw in raw_keywords:
+        seen[kw] = None
+    raw_keywords = list(seen)
+
     if not raw_keywords:
-        print("ERROR: --keywords is required and must not be empty.", file=sys.stderr)
+        print(
+            "ERROR: No keywords supplied. Use --keywords and/or --keywords-file.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     columns = [c.strip() for c in args.columns.split(",") if c.strip()]
@@ -181,13 +245,21 @@ def main() -> None:
     total_records: int | None = None
     page_number = 0
 
-    print(f"Starting keyword search export")
-    print(f"  Base URL : {args.base_url}")
-    print(f"  Region   : {args.region}")
-    print(f"  Keywords : {raw_keywords}")
-    print(f"  Columns  : {columns or '(all)'}")
-    print(f"  Filters  : {filters or '(none)'}")
-    print(f"  Page size: {args.page_size}")
+    keyword_source = []
+    if args.keywords.strip():
+        keyword_source.append("--keywords")
+    if keywords_file:
+        keyword_source.append(f"--keywords-file ({keywords_file})")
+
+    print("Starting keyword search export")
+    print(f"  Base URL        : {args.base_url}")
+    print(f"  Region          : {args.region}")
+    print(f"  Keyword source  : {', '.join(keyword_source)}")
+    print(f"  Total keywords  : {len(raw_keywords)}")
+    print(f"  Keywords        : {raw_keywords}")
+    print(f"  Columns         : {columns or '(all)'}")
+    print(f"  Filters         : {filters or '(none)'}")
+    print(f"  Page size       : {args.page_size}")
     print()
 
     while True:
