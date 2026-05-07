@@ -146,6 +146,7 @@ All endpoints are under `/api/v1/vulnerabilities`. **Every endpoint requires a `
 | `GET` | `/api/v1/vulnerabilities/ip/{ipAddress}` | All vulnerabilities found on a specific host |
 | `POST` | `/api/v1/vulnerabilities/by-plugin` | Plugin detections filtered by plugin IDs and optional IP list |
 | `POST` | `/api/v1/vulnerabilities/keyword-search` | Scan plugin output text for keywords; returns matching records |
+| `POST` | `/api/v1/vulnerabilities/plugin-text-search` | Server-side pluginText filter; Tenable SC returns only matching records |
 | `POST` | `/api/v1/vulnerabilities/filter` | Query with a custom filter list |
 
 ---
@@ -315,6 +316,56 @@ Returns `400 Bad Request` when `keywords` is missing or empty.
 
 ---
 
+### `POST /api/v1/vulnerabilities/plugin-text-search`
+
+Passes a `pluginText` filter directly to Tenable SC so the server returns only records whose plugin output contains the keyword. Unlike `/keyword-search` (client-side scan of all records), filtering here happens on the SC server — ideal for targeted single-keyword lookups with minimal response payload.
+
+```
+POST /api/v1/vulnerabilities/plugin-text-search?region=APAC&startOffset=0&endOffset=1000
+```
+
+**Request body:**
+```json
+{
+  "keyword": "log4j",
+  "filters": [{ "filterName": "severity", "operator": "=", "value": "4" }],
+  "columns": ["pluginID", "ip", "pluginName", "severity", "pluginText"]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `keyword` | Yes | Text to search for in plugin output. Forwarded to Tenable SC as `filterName=pluginText, operator==` |
+| `filters` | No | Additional Tenable SC field filters ANDed with the pluginText filter |
+| `columns` | No | Fields to return per record. Forwarded to Tenable SC so only the requested fields are included in the payload |
+
+**Response:**
+```json
+{
+  "startOffset": 0,
+  "endOffset": 1000,
+  "totalRecords": 42,
+  "returnedRecords": 42,
+  "results": [
+    {
+      "pluginID":   "155999",
+      "ip":         "10.0.0.5",
+      "pluginName": "Apache Log4Shell RCE (CVE-2021-44228)",
+      "severity":   { "id": "4", "name": "Critical" },
+      "pluginText": "The remote host is affected by CVE-2021-44228 (log4j) remote code execution..."
+    }
+  ]
+}
+```
+
+> **Choosing between `/plugin-text-search` and `/keyword-search`:**
+> - Use `/plugin-text-search` for a **single keyword** when you want Tenable SC to do the filtering — faster for targeted lookups, `totalRecords` reflects the already-filtered count.
+> - Use `/keyword-search` when you need to match **300+ keywords simultaneously** in one pass — Tenable SC returns all records and matching is done in Java.
+
+Returns `400 Bad Request` when `keyword` is blank or missing.
+
+---
+
 ### `POST /api/v1/vulnerabilities/filter`
 
 Query with an arbitrary list of Tenable SC field filters.
@@ -437,6 +488,35 @@ curl -s -X POST \
   "http://localhost:8080/api/v1/vulnerabilities/keyword-search?region=APAC&startOffset=1000&endOffset=2000" \
   -H "Content-Type: application/json" \
   -d '{ "keywords": ["CVE-2021-44228", "log4j"] }' \
+  | jq .
+```
+
+### Plugin text search — server-side filter (POST)
+
+```bash
+# Basic keyword search (Tenable SC does the filtering)
+curl -s -X POST \
+  "http://localhost:8080/api/v1/vulnerabilities/plugin-text-search?region=APAC&startOffset=0&endOffset=1000" \
+  -H "Content-Type: application/json" \
+  -d '{ "keyword": "log4j" }' \
+  | jq .
+
+# With severity filter and specific columns
+curl -s -X POST \
+  "http://localhost:8080/api/v1/vulnerabilities/plugin-text-search?region=APAC&startOffset=0&endOffset=1000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keyword":  "log4j",
+    "filters":  [{ "filterName": "severity", "operator": "=", "value": "4" }],
+    "columns":  ["pluginID", "ip", "pluginName", "severity", "pluginText"]
+  }' \
+  | jq .
+
+# Page 2 — totalRecords in the response is already filtered, so use it to know when to stop
+curl -s -X POST \
+  "http://localhost:8080/api/v1/vulnerabilities/plugin-text-search?region=APAC&startOffset=1000&endOffset=2000" \
+  -H "Content-Type: application/json" \
+  -d '{ "keyword": "log4j" }' \
   | jq .
 ```
 
