@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# Sample keywords file for keyword_search_export.py
+# One keyword per line. Blank lines and lines starting with '#' are ignored.
+# ---------------------------------------------------------------------------
+
+# CVE identifiers
+CVE-2021-44228
+CVE-2021-45046
+CVE-2022-22965
+CVE-2022-0778
+CVE-2023-23397
+
+# Known vulnerability names / products
+log4j
+log4shell
+spring4shell
+shellshock
+heartbleed
+spectre
+meltdown
+eternal blue
+wannacry
+petya
+notpetya
+
+# Common attack categories
+remote code execution
+rce
+arbitrary code execution
+privilege escalation
+local privilege escalation
+unauthenticated
+buffer overflow
+use after free
+sql injection
+cross-site scripting
+directory traversal
+path traversal
+server-side request forgery
+ssrf
+xml external entity
+xxe
+insecure deserialization
+command injection
+null pointer dereference
+
+# Protocol / service weaknesses
+default credentials
+weak password
+cleartext
+plaintext credentials
+anonymous access
+open redirect
+exposed admin
+unpatched
+
+# Compliance / configuration issues
+self-signed certificate
+certificate expired
+deprecated protocol
+sslv2
+sslv3
+tls 1.0
+tls 1.1
+rc4
+md5 signature
+sha1 signature
