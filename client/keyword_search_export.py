@@ -263,97 +263,106 @@ def main() -> None:
     print(f"  Page size       : {args.page_size}")
     print()
 
-    while True:
-        page_number += 1
-        end_offset = min(start_offset + args.page_size, total_records) if total_records else start_offset + args.page_size
-        total_pages = math.ceil(total_records / args.page_size) if total_records else "?"
+    output_path = args.output
+
+    def flush_to_csv() -> None:
+        """Write whatever has been collected so far to the output CSV."""
+        if not all_rows:
+            return
+        if columns:
+            fieldnames = [c for c in columns if c != "matchedKeywords"]
+            fieldnames.append("matchedKeywords")
+            extra = [f for f in collect_fieldnames(all_rows) if f not in fieldnames]
+            fieldnames.extend(extra)
+        else:
+            fieldnames = collect_fieldnames(all_rows)
+            if "matchedKeywords" in fieldnames:
+                fieldnames.remove("matchedKeywords")
+            fieldnames.append("matchedKeywords")
+
+        with open(output_path, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(
+                csvfile,
+                fieldnames=fieldnames,
+                extrasaction="ignore",
+                quoting=csv.QUOTE_MINIMAL,
+            )
+            writer.writeheader()
+            writer.writerows(all_rows)
+
+    try:
+        while True:
+            page_number += 1
+            end_offset = min(start_offset + args.page_size, total_records) if total_records else start_offset + args.page_size
+            total_pages = math.ceil(total_records / args.page_size) if total_records else "?"
+            print(
+                f"  Page {page_number}/{total_pages} | "
+                f"records {start_offset + 1}–{end_offset} of {total_records or '?'} | fetching ...",
+                end=" ",
+                flush=True,
+            )
+
+            try:
+                data = fetch_page(
+                    session=session,
+                    base_url=args.base_url,
+                    region=args.region,
+                    keywords=raw_keywords,
+                    columns=columns,
+                    filters=filters,
+                    start_offset=start_offset,
+                    page_size=args.page_size,
+                )
+            except requests.HTTPError as exc:
+                print(f"\nERROR: HTTP {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
+                sys.exit(1)
+            except requests.RequestException as exc:
+                print(f"\nERROR: Request failed — {exc}", file=sys.stderr)
+                sys.exit(1)
+
+            if total_records is None:
+                total_records = data.get("totalRecords", 0)
+                total_pages = math.ceil(total_records / args.page_size) if total_records else 1
+                end_offset = min(start_offset + args.page_size, total_records)
+
+            page_results: list[dict] = data.get("results") or []
+            returned = data.get("returnedRecords", len(page_results))
+            matched_this_page = len(page_results)
+
+            for result in page_results:
+                all_rows.append(flatten_record(result))
+
+            pct = int(min(start_offset + args.page_size, total_records) / total_records * 100) if total_records else 0
+            print(
+                f"done | SC records this page: {returned} | "
+                f"matched this page: {matched_this_page} | "
+                f"total matched: {len(all_rows)} | "
+                f"progress: {min(start_offset + args.page_size, total_records)}/{total_records} ({pct}%)"
+            )
+
+            start_offset += args.page_size
+
+            if total_records is not None and start_offset >= total_records:
+                print(
+                    f"\n  Completed: {total_records} SC records processed across "
+                    f"{page_number} page(s), {len(all_rows)} total keyword matches."
+                )
+                break
+
+            time.sleep(0.1)
+
+    except KeyboardInterrupt:
         print(
-            f"  Page {page_number}/{total_pages} | "
-            f"records {start_offset + 1}–{end_offset} of {total_records or '?'} | fetching ...",
-            end=" ",
+            f"\nInterrupted after {page_number} page(s). "
+            f"Saving {len(all_rows)} collected record(s) to {output_path} ...",
             flush=True,
         )
-
-        try:
-            data = fetch_page(
-                session=session,
-                base_url=args.base_url,
-                region=args.region,
-                keywords=raw_keywords,
-                columns=columns,
-                filters=filters,
-                start_offset=start_offset,
-                page_size=args.page_size,
-            )
-        except requests.HTTPError as exc:
-            print(f"\nERROR: HTTP {exc.response.status_code} — {exc.response.text}", file=sys.stderr)
-            sys.exit(1)
-        except requests.RequestException as exc:
-            print(f"\nERROR: Request failed — {exc}", file=sys.stderr)
-            sys.exit(1)
-
-        if total_records is None:
-            total_records = data.get("totalRecords", 0)
-            total_pages = math.ceil(total_records / args.page_size) if total_records else 1
-            end_offset = min(start_offset + args.page_size, total_records)
-
-        page_results: list[dict] = data.get("results") or []
-        returned = data.get("returnedRecords", len(page_results))
-        matched_this_page = len(page_results)
-
-        for result in page_results:
-            all_rows.append(flatten_record(result))
-
-        pct = int(min(start_offset + args.page_size, total_records) / total_records * 100) if total_records else 0
-        print(
-            f"done | SC records this page: {returned} | "
-            f"matched this page: {matched_this_page} | "
-            f"total matched: {len(all_rows)} | "
-            f"progress: {min(start_offset + args.page_size, total_records)}/{total_records} ({pct}%)"
-        )
-
-        # Advance offset
-        start_offset += args.page_size
-
-        # Stop when we have consumed all SC records
-        if total_records is not None and start_offset >= total_records:
-            print(
-                f"\n  Completed: {total_records} SC records processed across "
-                f"{page_number} page(s), {len(all_rows)} total keyword matches."
-            )
-            break
-
-        # Brief pause to be a polite API client
-        time.sleep(0.1)
+    finally:
+        flush_to_csv()
 
     if not all_rows:
-        print("\nNo matching records found. CSV will not be written.")
+        print("\nNo matching records found. CSV was not written.")
         sys.exit(0)
-
-    # Determine CSV columns: use requested columns order when specified
-    if columns:
-        fieldnames = [c for c in columns if c != "matchedKeywords"]
-        fieldnames.append("matchedKeywords")
-        # Add any extra fields that came back but weren't in the requested list
-        extra = [f for f in collect_fieldnames(all_rows) if f not in fieldnames]
-        fieldnames.extend(extra)
-    else:
-        fieldnames = collect_fieldnames(all_rows)
-        # Ensure matchedKeywords is last
-        if "matchedKeywords" in fieldnames:
-            fieldnames.remove("matchedKeywords")
-        fieldnames.append("matchedKeywords")
-
-    output_path = args.output
-    with open(output_path, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(
-            csvfile,
-            fieldnames=fieldnames,
-            extrasaction="ignore",
-            quoting=csv.QUOTE_MINIMAL,
-        )
-        writer.writeheader()
-        writer.writerows(all_rows)
 
     print(f"\nExported {len(all_rows)} record(s) to: {output_path}")
 
