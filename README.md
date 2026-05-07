@@ -145,6 +145,7 @@ All endpoints are under `/api/v1/vulnerabilities`. **Every endpoint requires a `
 | `GET` | `/api/v1/vulnerabilities/scan/{scanId}` | Vulnerabilities from a specific scan run |
 | `GET` | `/api/v1/vulnerabilities/ip/{ipAddress}` | All vulnerabilities found on a specific host |
 | `POST` | `/api/v1/vulnerabilities/by-plugin` | Plugin detections filtered by plugin IDs and optional IP list |
+| `POST` | `/api/v1/vulnerabilities/keyword-search` | Scan plugin output text for keywords; returns matching records |
 | `POST` | `/api/v1/vulnerabilities/filter` | Query with a custom filter list |
 
 ---
@@ -251,6 +252,69 @@ Returns `400 Bad Request` when `pluginIds` is missing or empty.
 
 ---
 
+### `POST /api/v1/vulnerabilities/keyword-search`
+
+Fetches a page of vulnerabilities from Tenable SC and returns only records whose `pluginText` contains at least one of the supplied keywords. Supports **300+ keywords** — each record's plugin text is lowercased once and all keywords are scanned in a single pass.
+
+```
+POST /api/v1/vulnerabilities/keyword-search?region=APAC&startOffset=0&endOffset=1000
+```
+
+**Request body:**
+```json
+{
+  "keywords": ["CVE-2021-44228", "log4j", "remote code execution"],
+  "filters":  [{ "filterName": "severity", "operator": "=", "value": "4" }],
+  "columns":  ["pluginID", "ip", "pluginName", "severity", "pluginText"]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `keywords` | Yes | One or more strings to search for inside plugin output text (case-insensitive) |
+| `filters` | No | Standard Tenable SC field filters applied before the keyword scan |
+| `columns` | No | Fields to return in each result row. `pluginText` is always fetched for matching but only appears in `fields` when explicitly listed here |
+
+**Response:**
+```json
+{
+  "startOffset": 0,
+  "endOffset": 1000,
+  "totalRecords": 5000,
+  "returnedRecords": 2,
+  "results": [
+    {
+      "fields": {
+        "pluginID":   "155999",
+        "ip":         "10.0.0.5",
+        "pluginName": "Apache Log4Shell RCE (CVE-2021-44228)",
+        "severity":   { "id": "4", "name": "Critical" },
+        "pluginText": "The remote host is affected by CVE-2021-44228 (log4j) remote code execution..."
+      },
+      "matchedKeywords": ["CVE-2021-44228", "log4j", "remote code execution"]
+    },
+    {
+      "fields": {
+        "pluginID":   "156000",
+        "ip":         "192.168.1.3",
+        "pluginName": "Log4j Unsupported Version Detection",
+        "severity":   { "id": "4", "name": "Critical" },
+        "pluginText": "An unsupported version of log4j was detected on the remote host..."
+      },
+      "matchedKeywords": ["log4j"]
+    }
+  ]
+}
+```
+
+Pagination behaviour:
+- `totalRecords` — Tenable SC's total record count (before keyword filtering). Use this with `startOffset`/`endOffset` to page through the full dataset.
+- `returnedRecords` — keyword-matched count for **this page only**.
+
+Returns `400 Bad Request` when `keywords` is missing or empty.
+
+---
+
 ### `POST /api/v1/vulnerabilities/filter`
 
 Query with an arbitrary list of Tenable SC field filters.
@@ -342,6 +406,37 @@ curl -s -X POST "http://localhost:8080/api/v1/vulnerabilities/by-plugin?region=A
     "pluginIds":   ["10881", "51192"],
     "ipAddresses": ["10.0.0.5", "192.168.1.3"]
   }' \
+  | jq .
+```
+
+### Keyword search across plugin output text
+
+```bash
+# Search for keywords in plugin output (returns only matching records)
+curl -s -X POST \
+  "http://localhost:8080/api/v1/vulnerabilities/keyword-search?region=APAC&startOffset=0&endOffset=1000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keywords": ["CVE-2021-44228", "log4j", "remote code execution"]
+  }' \
+  | jq .
+
+# With severity filter and specific columns
+curl -s -X POST \
+  "http://localhost:8080/api/v1/vulnerabilities/keyword-search?region=APAC&startOffset=0&endOffset=1000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keywords": ["CVE-2021-44228", "log4j"],
+    "filters":  [{ "filterName": "severity", "operator": "=", "value": "4" }],
+    "columns":  ["pluginID", "ip", "pluginName", "severity", "pluginText"]
+  }' \
+  | jq .
+
+# Page 2 — use totalRecords from the first response to know when to stop
+curl -s -X POST \
+  "http://localhost:8080/api/v1/vulnerabilities/keyword-search?region=APAC&startOffset=1000&endOffset=2000" \
+  -H "Content-Type: application/json" \
+  -d '{ "keywords": ["CVE-2021-44228", "log4j"] }' \
   | jq .
 ```
 
