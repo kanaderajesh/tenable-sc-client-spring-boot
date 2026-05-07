@@ -1,1 +1,6 @@
 .claude/
+target/
+*.class
+*.jar
+*.war
+
