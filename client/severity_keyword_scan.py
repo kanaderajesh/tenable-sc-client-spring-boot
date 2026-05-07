@@ -2,7 +2,7 @@
 """
 Scan vulnerabilities by severity for keywords in plugin output text.
 
-For each severity level (4=Critical, 3=High, 2=Medium, 1=Low, 0=Info) the script
+For each severity level (4=Critical, 3=High, 2=Medium, 1=Low) the script
 pages through all vulnerability records using POST /api/v1/vulnerabilities/filter.
 Each record's pluginText is searched client-side (case-insensitive, single pass)
 against every keyword from the keywords file. Matching records are written to a
@@ -25,7 +25,7 @@ Options
                    pluginText is always fetched for matching but only appears in
                    the CSV when explicitly listed here.
                    (default: pluginID,ip,pluginName,severity,pluginText)
-  --severities     Comma-separated severity levels to scan  (default: 4,3,2,1,0)
+  --severities     Comma-separated severity levels to scan  (default: 4,3,2,1)
   --page-size      Records fetched per API call              (default: 1000)
   --output         Output CSV file path                      (default: severity_keyword_results.csv)
 
@@ -118,8 +118,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--severities",
-        default=os.getenv("TENABLE_SEVERITIES", "4,3,2,1,0"),
-        help="Comma-separated severity levels to scan in order (default: 4,3,2,1,0)",
+        default=os.getenv("TENABLE_SEVERITIES", "4,3,2,1"),
+        help="Comma-separated severity levels to scan in order (default: 4,3,2,1)",
     )
     p.add_argument(
         "--page-size",
